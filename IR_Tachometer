@@ -1,0 +1,39 @@
+int count = 0;
+int check = 0;
+unsigned long time_taken = 0;
+double angular_v;
+
+void setup() {
+  Serial.begin(9600);
+  attachInterrupt(digitalPinToInterrupt(3), detect, FALLING);
+}
+
+void loop() {
+  if (check == 1) {
+    unsigned long start=micros();
+    time_taken = millis() - time_taken;
+    angular_v = ((2 * 3.14159) / time_taken) * 1000;
+    Serial.println();
+    Serial.print("angular velocity: ");
+    Serial.println(angular_v, 6);
+    //Serial.println(" radians per second");
+//    Serial.print("time/revolution: ");
+//    Serial.print(time_taken, DEC);
+//    Serial.println(" miliseconds\n");
+    time_taken = millis();
+    check = 0;
+    unsigned long total = micros()-start;
+    //Serial.print("time/process: ");
+    Serial.print(total, DEC);
+    Serial.println(" microseconds\n");
+  }
+}
+
+void detect() {
+  if (check == 0) {
+    count++;
+    Serial.print("count: ");
+    Serial.println(count, DEC);
+    check = 1;
+  }
+}
