@@ -1,38 +1,49 @@
-int count = 0;
+/*
+   at 2 G acceleration, max agular acceleration should be 10.2343 rev/(sec^2)
+*/
+
+#define MAX_ANGULAR_ACCELERATION 10.2343
+
+int count = 0, count_check;
 int check = 0;
-unsigned long time_taken = 0;
-double angular_v;
+unsigned long time_taken = 0, time_check = 0;
+double angular_v_last, angular_v;
 
 void setup() {
   Serial.begin(9600);
-  attachInterrupt(digitalPinToInterrupt(3), detect, FALLING);
+  attachInterrupt(digitalPinToInterrupt(3), detect, FALLING);   //tach signal attached to pin 3 active low signal so signal goes low to signal initial input
 }
 
 void loop() {
-  if (check == 1) {
-    unsigned long start=micros();
-    time_taken = millis() - time_taken;
-    angular_v = ((2 * 3.14159) / time_taken) * 1000;
-    Serial.println();
-    Serial.print("angular velocity: ");
+  if (check == 1) {   //check variable only enables this loop function to run in between signals from tach, also prevents new data read in until a minimum delay has passed
+    unsigned long start = micros();
+    time_taken = millis() - time_taken;                             //sutract time from end of calculations last cycle from time current time to get time between signals 
+    angular_v = (double)(1 / ((double)time_taken)) * 60000;   //RPM
+    //angular_v = ((2 * 3.14159) / time_taken) * 1000;        //rads/sec
+    Serial.print("RPM: ");
     Serial.println(angular_v, 6);
     //Serial.println(" radians per second");
-//    Serial.print("time/revolution: ");
-//    Serial.print(time_taken, DEC);
-//    Serial.println(" miliseconds\n");
-    time_taken = millis();
-    check = 0;
-    unsigned long total = micros()-start;
+    Serial.print("time/revolution: ");
+    Serial.print(time_taken, DEC);                              //give a printout of the time between signals
+    Serial.println(" miliseconds\n");
+    time_taken = millis();                                    //store end time of current cycle calculations
+
+    //unsigned long total = micros() - start;               //vestigial code used for timing monitoring, long delay in signal, ie 0.0001 RPM results in cacluation taking approximately 30 ms, typical 1 ms
     //Serial.print("time/process: ");
-    Serial.print(total, DEC);
-    Serial.println(" microseconds\n");
+    //    Serial.print(total, DEC);
+    //    Serial.println(" microseconds");
+    
+    delay(12);                                            //under no conditions the signal should repeat more frequently than 14 ms or so
+    angular_v_last=angular_v;
+    time_check=millis();
+    check = 0;
   }
 }
 
 void detect() {
   if (check == 0) {
     count++;
-    Serial.print("count: ");
+    Serial.print("\ncount: ");
     Serial.println(count, DEC);
     check = 1;
   }
