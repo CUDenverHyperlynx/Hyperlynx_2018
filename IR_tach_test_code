@@ -1,0 +1,42 @@
+int check = 0;
+unsigned long time_taken = 0;
+unsigned long startTime = 0;
+int rpm;
+//double distance = 0;
+int count = 0;
+
+void setup() {
+  Serial.begin(9600);
+  attachInterrupt(digitalPinToInterrupt(3), detect, FALLING);
+  Serial.print("rpm");
+  Serial.print("\t\t");
+  //Serial.print("distance(ft)");
+  Serial.print("count");
+  Serial.print("\t\t");
+  Serial.println("time taken(ms)");
+}
+
+void loop() {
+  while(millis()<= 60000){
+    
+    if (check == 1) {
+      time_taken = millis() - startTime;
+      startTime = millis();
+      rpm = 60000 / time_taken;
+      check = 0;
+      Serial.print(rpm);
+      Serial.print("\t\t");
+      //Serial.println(distance);
+      Serial.print(count);
+      Serial.print("\t\t");
+      Serial.println(time_taken);
+    }
+    
+  }
+}
+
+void detect() {
+  check = 1;
+  //distance = distance + 6.28;
+  count++;
+}
