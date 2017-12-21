@@ -1,0 +1,40 @@
+/*
+Physical Connections:
+-------------------------
+Arduino  | Peripherals
+-------- | --------------
+Pin A0 --- AttoPilot "V"
+Pin A1 --- AttoPilot "I"
+GND ------ AttoPilot "GND"
+*/
+int VRaw; //This will store our raw ADC data
+int IRaw;
+float VFinal; //This will store the converted data
+float IFinal;
+
+void setup() {
+  
+  Serial.begin(9600);
+  
+}
+
+void loop() { 
+
+  digitalWrite(11, HIGH);  
+  
+  //Measurement
+  VRaw = analogRead(A0);
+  IRaw = analogRead(A1);
+  
+  //Conversion
+  VFinal = VRaw/49.44; //45 Amp board
+  IFinal = IRaw/14.9; //45 Amp board
+
+  Serial.print(VFinal);
+  Serial.println(" V");
+  Serial.print(IFinal);
+  Serial.println(" A");
+  Serial.println("");
+    
+  delay(250);
+}
