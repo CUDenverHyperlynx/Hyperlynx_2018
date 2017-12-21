@@ -1,0 +1,252 @@
+/*
+ * following code is an overall code for testing the linear actuators with the IBT_2 motor controller, fully adapatable for multiple modes
+ * controlled through serial monitor, for assistance enter the command "help"
+ */
+
+const int setting=A0;  //potentiometer wiper for analog program to set drive spped to
+const int button_M=4;   //button to initialize movement
+
+const int feedback_value=A2;  //feedback from actuator 
+
+String command;
+
+const int forward=10;             //pin to attach to IBT_2 forward pin
+const int reverse=11;             //pin to attach to IBT_2 reverse pin
+
+unsigned long time_start;           //variable to hold time button was pushed
+unsigned long time_end;           //variable to hold time button was pushed
+
+int state_m=0, extension_set=0, state_f=1;
+
+int pot, pot_setting, feedback_start, feedback_end, feedback_change,feedback_high=911,feedback_low=35;
+double durration, rate1, rate2, factor=256, percentage_movement, extension, len=25;
+
+#define FORWARD 17    //arbitrary values set for readability (prime numbers beyond scope of pins to prevent problems)
+#define REVERSE 19
+
+void setup() {
+pinMode(setting, INPUT);
+pinMode(button_M, INPUT);
+pinMode(feedback_value, INPUT);
+pinMode(forward, OUTPUT);
+pinMode(reverse, OUTPUT);
+Serial.begin(9600);
+}
+
+void loop() {
+  if (state_f==0)
+movement();
+  if (state_f==1)
+movement_ref();
+check_factor();
+
+}
+
+void movement(){
+  if (digitalRead(button_M)==HIGH && state_m==0){
+  //pot=analogRead(setting);
+  
+  if(pot>=512){
+    pot_setting=(pot-512)/2;
+    feedback_start=analogRead(feedback_value);
+    time_start=millis();
+    analogWrite(forward,pot_setting);
+    analogWrite(reverse,0);
+    state_m=FORWARD;
+    }
+  
+  if(pot<512){
+    pot_setting=pot/2;
+    feedback_start=analogRead(feedback_value);
+    time_start=millis();
+    analogWrite(forward,0);
+    analogWrite(reverse,pot_setting);
+    state_m=REVERSE;
+    }
+  }
+     
+   if(digitalRead(button_M)==LOW && state_m!=0){
+    analogWrite(forward,0);
+    analogWrite(reverse,0);
+    time_end=millis();
+    if(state_m==FORWARD){
+    Serial.print("Time elapsed EXTENDING actuator.....: ");
+    readout();
+    }
+    if(state_m==REVERSE){
+      Serial.print("Time elapsed RETRACTING actuator..: ");
+      readout();
+    }
+    }
+}
+
+void movement_ref(){
+  int feedback_val=analogRead(feedback_value);
+  int i=0, range=3;
+
+  if(digitalRead(button_M)==HIGH){
+    len +=.3;                                  //mathematically accuracy should be to within .11 mm practically can only step in .25 mm increments, constant motion monitored to be slightly off prescribed location, but moves with reliable change in position while utilizing .5 mm steps.
+    Serial.print("extension set to: ");
+    Serial.print(len);
+    Serial.println(" mm");
+    Serial.print("total extension set to(caliper read): ");
+    Serial.println(len+18.52);
+    }
+    
+    /*
+  if((digitalRead(button_M)==LOW) && (len>=0)){
+    len -=.15;
+    extension_set=map(len*100, 0, 10016, feedback_low, feedback_high);
+    delay(200);
+    }
+*/
+
+  extension_set=map(len*100, 0, 10016, feedback_low, feedback_high);
+  int setting= extension_set-feedback_val;
+  
+  
+  if ((setting)>(-range)&(setting)<range){
+     analogWrite(forward,0);
+    analogWrite(reverse,0);
+   
+    }
+  else if((setting)>range){
+    analogWrite(forward,64);    //at higher rate of movement the rate of change in position exceeds the rate of change for motion in a single direction, aka no overshoot requires limited speed
+    analogWrite(reverse,0);
+    }
+  else if((setting)<(-range)){
+    analogWrite(forward,0);
+    analogWrite(reverse,64);
+    }
+   delay(200); 
+  }
+
+void readout(){
+  feedback_end=analogRead(feedback_value);
+  state_m=0;
+  durration=(time_end - time_start);
+  Serial.print(durration, 0);
+  Serial.println(" milliseconds");
+  
+  Serial.print("Difference in feedback value........: ");
+  feedback_change=feedback_end-feedback_start;
+  Serial.println(feedback_change);
+  
+  rate1=feedback_change/(durration/1000);
+  Serial.print("Rate of feedback change.............: ");
+  Serial.print(rate1);
+  Serial.println(" value per second");
+  
+  rate2=(rate1/1024)*factor;                                           ///factor should approximate 307/(rate of feedback change) or, (0.3*1027)/(rate of feedback change)
+  Serial.print("Rate of movement....................: ");             ///0.3 being the given speed of the actuator in inches per second. this should set the factor to a value relative to the range of feedback values per inch of extension for the actuator
+  Serial.print(rate2);
+  Serial.println(" inches per second");
+  
+  Serial.print("Potentiometer set to................: ");
+  percentage_movement=(double)pot_setting/256*100;
+  Serial.print(percentage_movement, 4);
+  Serial.println(" %");
+
+  Serial.print("Current feedback value..............: ");
+  Serial.println(feedback_end);
+
+  extension=(((double)feedback_end-(double)feedback_low)/((double)feedback_high-(double)feedback_low))*(double)100.16;
+  Serial.print("Actuator extension..................: ");
+  Serial.print(extension);    ///variables added to permit non customary start and endpoints
+  Serial.println(" mm");
+
+  Serial.println();
+  }
+
+
+void read_command(){
+command="";
+char symbol;
+symbol=Serial.read();
+delay(3);                   //delay slows down to wait for next characters 9600 baud vs 16MHz clock...
+while(isAlpha(symbol)){
+  command+=String(symbol);
+  symbol=Serial.read();
+  delay(3);
+}
+//Serial.println(command);
+}
+
+void check_factor(){
+  if(Serial.available()>=1){
+    read_command();
+    //Serial.println(command);
+    if (command=="help" || command=="Help"){    //entering letter H into serial allows check on values set by user
+      Serial.print("Factor set to........: ");
+      Serial.println(factor);
+      Serial.print("Potentiometer set to........: ");
+      Serial.println(pot);
+      Serial.println("\tmultiplication factor of feedback change per inch");
+      Serial.print("function set to..........: ");
+      Serial.println(state_f);
+      Serial.println("\t=1 means movement based on reference, =0 means movement based on button");
+      Serial.print("feedback high set to.: ");
+      Serial.println(feedback_high);
+      Serial.println("\toption to rescale feedback for non full utilization of potentiometer feedback");
+      Serial.print("feedback low set to..: ");
+      Serial.println(feedback_low);
+      Serial.println("\tditto");
+      Serial.println();
+    }
+
+    
+    if(command=="pot" || command=="Pot"){     ///allows the setting of mode in case the feedback reads to an opposite range than intended
+      pot=Serial.parseFloat();
+      Serial.print("New pot set to: ");  //provides feedback that mode  has been changed when value is preceeded by M
+      Serial.println(pot);
+      }
+      
+    
+      if(command=="low" || command=="Low"){     ///allows the setting of start of feedback value
+      feedback_low=Serial.parseInt();
+      Serial.print("New low set to: ");  //provides feedback that low  has been changed when value is preceeded by S
+      Serial.println(feedback_low);
+      }
+      
+      if(command=="High" || command=="high"){     ///allows the setting of end of feedback value
+      feedback_high=Serial.parseInt();
+      Serial.print("New high set to: ");  //provides feedback that high  has been changed when value is preceeded by E
+      Serial.println(feedback_high);
+      }
+      
+      if(command=="function" || command=="Function"){     ///allows the setting of end of feedback value
+      state_f=Serial.parseInt();
+      Serial.print("New function set to: ");  //provides feedback that high  has been changed when value is preceeded by E
+      Serial.println(state_f);
+      Serial.println("=1 means movement based on reference, =0 means movement based on button");
+
+      }
+      
+      if(command=="length" || command=="Length"){     ///allows the setting of end of feedback value
+      len=Serial.parseFloat();
+      Serial.print("New length set to: ");  //provides feedback that high  has been changed when value is preceeded by E
+      Serial.println(len);
+      //extension_set_math=((len/3.875)*(feedback_high-feedback_low))+feedback_low;
+      extension_set=map(len, 0, 100, feedback_low, feedback_high);
+      Serial.print("total extension set to(caliper read): ");
+      Serial.println(len+18.52);
+      
+      Serial.print("extension set to feedback value: ");
+      Serial.println(extension_set);
+      /*
+       //following code to prove map function returned same as math
+      Serial.print("New feedback target calculated to:... ");  //provides feedback that high  has been changed when value is preceeded by E
+      Serial.println(extension_set_math);
+      Serial.print("New feedback target mapped to:....... ");  //provides feedback that high  has been changed when value is preceeded by E
+      Serial.println(extension_set_map);
+      */
+      }
+      
+    if(command=="factor" || command=="Factor"){
+      factor=Serial.parseInt();
+      Serial.print("New factor set to: ");  //provides feedback that multiplier factor has been changed when value is preceeded by F
+      Serial.println(factor);
+      }
+      Serial.println();
+    }
+  }
