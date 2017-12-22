@@ -7,6 +7,7 @@
 int count = 0, count_check, count_old, RPM_old, delay_time = 15;
 int check = 0;
 unsigned long time_taken = 0;
+unsigned long time_change;
 double angular_v;
 
 void setup() {
@@ -52,8 +53,8 @@ void loop() {
 
 ISR(INT1_vect) {    //need a 150 microsecond pulse for a valid input (1 inch strip covers approximately 1/72 of the tire rotating at fastest ~14 ms per full rotation) 14000/72 = ~192 so any pulse less than 75% of that should be error signal
   if (digitalRead(3)==LOW)            //interrupt triggers at any change in logic level, so initial trigger of signal zeros out timer 0 which if logic changes again before minimum time count will not increment as the timer 0 has not reached a high enough level
-    TCNT0 = 0;
-  if (check == 0 && TCNT0>35) {
+    time_change = millis();
+  if (check == 0 && (millis()- time_change)>150) {
     count++;
     Serial.print("\ncount: ");
     Serial.println(count, DEC);
