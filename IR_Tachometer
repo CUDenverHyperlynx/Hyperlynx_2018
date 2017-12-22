@@ -6,18 +6,22 @@
 
 int count = 0, count_check, count_old, RPM_old, delay_time = 15;
 int check = 0;
-unsigned long time_taken = 0, time_check = 0;
-double angular_v_last, angular_v;
+unsigned long time_taken = 0;
+double angular_v;
 
 void setup() {
+  cli();
+  EIMSK = (1<<INT1);                            //enable external interrupt 1 (pin 3)
+  EICRA = (1<<ISC10);                           //set external interrupt 1 to trigger on change in logic level
   TCNT1 = 49911;
   TCCR1A = 0;
   TCCR1B = 0;
   TCCR1B |= ((1 << CS12) | (1 << CS10));          //set CS bits for timer 1 to 101 giving the clock a 1/1024 prescaler
   TIMSK1 |= (1 << TOIE1);                         //enable timer 1 interrupt to ovflow
+  TCCR0A=0;
+  TCCR0B = (1<<CS01)|(1<<CS00);   //16cycles per microsecond 1/64 prescaler looking for 140 microseconds ==> timer must reach 35 for valid input
   Serial.begin(9600);
   sei();
-  attachInterrupt(digitalPinToInterrupt(3), detect, FALLING);   //tach signal attached to pin 3 active low signal so signal goes low to signal initial input
 }
 
 ISR(TIMER1_OVF_vect){
@@ -29,36 +33,27 @@ ISR(TIMER1_OVF_vect){
     delay_time = delay_time - ((angular_v - RPM_old)/(count-count_old));
   count_old=count;
   RPM_old=angular_v;
+  TCNT1 = 49911;
   }
 
 void loop() {
   if (check == 1) {   //check variable only enables this loop function to run in between signals from tach, also prevents new data read in until a minimum delay has passed
-    //unsigned long start = micros();
     time_taken = millis() - time_taken;                             //sutract time from end of calculations last cycle from time current time to get time between signals
     angular_v = (double)(1 / ((double)time_taken)) * 60000;   //RPM
-    //angular_v = ((2 * 3.14159) / time_taken) * 1000;        //rads/sec
     Serial.print("RPM: ");
     Serial.println(angular_v, 6);
-    //Serial.println(" radians per second");
     Serial.print("time/revolution: ");
     Serial.print(time_taken, DEC);                              //give a printout of the time between signals
-    Serial.println(" miliseconds\n");
-    time_taken = millis();                                    //store end time of current cycle calculations
-
-    //unsigned long total = micros() - start;               //vestigial code used for timing monitoring, long delay in signal, ie 0.0001 RPM results in cacluation taking approximately 30 ms, typical 1 ms
-    //Serial.print("time/process: ");
-    //    Serial.print(total, DEC);
-    //    Serial.println(" microseconds");
-
+    Serial.println(" ms\n");
     delay(delay_time);                                            //under no conditions the signal should repeat more frequently than 14 ms or so
-    angular_v_last = angular_v;
-    time_check = millis();
     check = 0;
   }
 }
 
-void detect() {
-  if (check == 0) {
+ISR(INT1_vect) {    //need a 150 microsecond pulse for a valid input (1 inch strip covers approximately 1/72 of the tire rotating at fastest ~14 ms per full rotation) 14000/72 = ~192 so any pulse less than 75% of that should be error signal
+  if (digitalRead(3)==LOW)            //interrupt triggers at any change in logic level, so initial trigger of signal zeros out timer 0 which if logic changes again before minimum time count will not increment as the timer 0 has not reached a high enough level
+    TCNT0 = 0;
+  if (check == 0 && TCNT0>35) {
     count++;
     Serial.print("\ncount: ");
     Serial.println(count, DEC);
