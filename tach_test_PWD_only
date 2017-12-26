@@ -1,0 +1,86 @@
+/*
+   at 2 G acceleration, max agular acceleration should be 10.2343 rev/(sec^2)
+*/
+
+#define MAX_ANGULAR_ACCELERATION 10.2343
+
+int count = 0, count_check, count_old, RPM_old, delay_time = 15;
+int check = 0;
+unsigned long time_taken = 0;
+unsigned long time_change;
+double angular_v;
+boolean pulse_ok = false;
+
+void setup() {
+  cli();
+  External_Interrupt_Enable();
+  Timer0_Interrupt_Enable();
+  Serial.begin(9600);
+  sei();
+}
+
+void External_Interrupt_Enable() {
+  EIMSK = (1 << INT1);                          //enable external interrupt 1 (pin 3)
+  EICRA = (1 << ISC10);                         //set external interrupt 1 to trigger on change in logic level
+}
+
+void Timer0_Interrupt_Enable() {
+  TCCR0A = 0;
+  TCCR0B = (1 << CS01) | (1 << CS00); //16cycles per microsecond 1/64 prescaler looking for 140 microseconds ==> timer must reach 35 for valid input
+}
+
+void Timer1_Interrupt_Enable() {
+  TCNT1 = 49911;
+  TCCR1A = 0;
+  TCCR1B = 0;
+  TCCR1B |= ((1 << CS12) | (1 << CS10));          //set CS bits for timer 1 to 101 giving the clock a 1/1024 prescaler
+  TIMSK1 |= (1 << TOIE1);                         //enable timer 1 interrupt to ovflow
+}
+
+/*
+  ISR(TIMER1_OVF_vect) {
+  int val = RPM_old + 640;
+  if (val < angular_v) {
+    delay_time = delay_time + ((angular_v - val) / (count - count_old));
+  }
+  else
+    delay_time = delay_time - ((angular_v - RPM_old) / (count - count_old));
+  count_old = count;
+  RPM_old = angular_v;
+  TCNT1 = 49911;
+  }
+*/
+
+ISR(TIMER1_OVF_vect) {
+  pulse_ok = true;
+  TIMSK0 = 0;                         //disable timer 0 interrupt to ovflow
+}
+
+void loop() {
+  if (check == 1) {   //check variable only enables this loop function to run in between signals from tach, also prevents new data read in until a minimum delay has passed
+    time_taken = millis() - time_taken;                             //sutract time from end of calculations last cycle from time current time to get time between signals
+    angular_v = (double)(1 / ((double)time_taken)) * 60000;   //RPM
+    Serial.print("RPM: ");
+    Serial.println(angular_v, 6);
+    Serial.print("time/revolution: ");
+    Serial.print(time_taken, DEC);                              //give a printout of the time between signals
+    Serial.println(" ms\n");
+    delay(10);                                            //under no conditions the signal should repeat more frequently than 14 ms or so
+    time_taken = millis();
+    check = 0;
+  }
+}
+
+ISR(INT1_vect) {               //need a 150 microsecond pulse for a valid input (1 inch strip covers approximately 1/72 of the tire rotating at fastest ~14 ms per full rotation) 14000/72 = ~192 so any pulse less than 75% of that should be error signal
+  if (digitalRead(3) == LOW) { //interrupt triggers at any change in logic level, so initial trigger of signal zeros out timer 0 which if logic changes again before minimum time count will not increment as the timer 0 has not reached a high enough level
+    TCNT0 = 221;
+    TIMSK0 |= (1 << TOIE0);                         //enable timer 0 interrupt to ovflow
+    pulse_ok = false;
+  }
+  if (check == 0 && pulse_ok == true) {
+    count++;
+    Serial.print("\ncount: ");
+    Serial.println(count, DEC);
+    check = 1;
+  }
+}
