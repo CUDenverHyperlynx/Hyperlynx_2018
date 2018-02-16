@@ -1,0 +1,17 @@
+% Use this program to set constants in the PodConstants.mat file.
+%
+% INSTRUCTIONS:
+%   Change variable values, or add new variables.  Include units in name 
+%   of variable.
+%
+if exist('PodConstants.mat
+delete('PodConstants.mat')
+
+pod_mass_lbs = 650;
+pod_mass_kg = pod_mass_lbs / 2.2;
+wheel_base_in = 78;
+wheel_radius_in = 11.5;
+
+
+% This line saves data to the .mat file, and overwrites existing values.
+save('PodConstants');
