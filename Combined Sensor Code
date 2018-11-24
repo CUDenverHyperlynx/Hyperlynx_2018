@@ -1,0 +1,85 @@
+#include <stdio.h> //General library
+#include <SparkFunMLX90614.h> //SparkFun MLX90614 library
+#include <Wire.h> //I2C library
+
+IRTherm temp; //Object to interact with throughout
+
+volatile uint8_t objectTemp;
+volatile uint8_t ambientTemp;
+
+// IV sensor setup variables
+int VRaw; //This will store our raw ADC data
+int IRaw;
+float VFinal; //This will store the converted data
+float IFinal;
+
+void setup()
+{
+  Wire.begin (4); //Join I2C bus with adress #4
+  Wire.onRequest (requestEvent); //Register event
+
+  Serial.begin(9600); //Initialize serial to log output
+  temp.begin (); // Initialize I2C library and the MLX90614.
+  temp.setUnit(TEMP_C); //Set units to Celsius. 
+}
+
+
+void loop()
+{
+  digitalWrite(11, HIGH);  
+  VRaw = analogRead(A0);
+  IRaw = analogRead(A1);
+  
+  //Conversion
+  VFinal = VRaw/49.44; //45 Amp board
+  IFinal = IRaw/14.9; //45 Amp board
+
+  Serial.print(VFinal);
+  Serial.println(" V");
+  Serial.print(IFinal);
+  Serial.println(" A");
+  Serial.println("");
+  
+  //Call therm.read() to read object and ambient temperatures from the sensor.
+  if (temp.read()) //On success, read() will return a 1, on fail 0.
+  {
+    objectTemp = float(temp.object()); //Use object() and ambient() functions to grab temperatures
+                                         //They're floats, calculated out to the unit in setUnit function.
+    ambientTemp = float(temp.ambient());
+
+    if (objectTemp < 50 && objectTemp>0)
+    {
+      Serial.print ("Object: " + String(objectTemp));
+      Serial.println ("C");
+
+      Serial.print ("Ambient: " + String (ambientTemp));
+      Serial.println ("C");      
+    }
+    else
+    {
+      Serial.print ("Critical Teperature Detected!");
+      Serial.println ("Object: " + objectTemp);
+      Serial.println ("Ambient: " + ambientTemp);
+    }
+  }
+
+
+ delay (1000); 
+}
+
+void requestEvent()
+{
+  if (0 < objectTemp && objectTemp < 50)
+    {
+      Wire.write("Object: " + objectTemp);
+      Wire.write("\nAmbient: " + ambientTemp);
+    }
+
+  else
+  {
+    Wire.write("Critical Temperature Detected!");
+    Wire.write("\nObject: " + objectTemp);
+    Wire.write("\nAmbient: " + ambientTemp);
+  }
+
+}
