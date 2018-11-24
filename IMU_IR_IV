@@ -1,0 +1,191 @@
+#include <stdio.h> //General library
+#include <SparkFunMLX90614.h> //SparkFun MLX90614 library
+#include <Wire.h> //I2C library
+
+IRTherm temp; //Object to interact with throughout
+
+volatile uint8_t objectTemp;
+volatile uint8_t ambientTemp;
+
+// IV sensor setup variables
+int VRaw; //This will store our raw ADC data
+int IRaw;
+float VFinal; //This will store the converted data
+float IFinal;
+
+// IMU setup libraries
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BNO055.h>
+#include <utility/imumaths.h>
+
+// IMU setup variables
+#define BNO055_SAMPLERATE_DELAY_MS (1000)
+
+Adafruit_BNO055 bno = Adafruit_BNO055(55);
+
+void displaySensorDetails(void)
+{
+  sensor_t sensor;
+  bno.getSensor(&sensor);
+  Serial.println("------------------------------------");
+  Serial.print  ("Sensor:       "); Serial.println(sensor.name);
+  Serial.print  ("Driver Ver:   "); Serial.println(sensor.version);
+  Serial.print  ("Unique ID:    "); Serial.println(sensor.sensor_id);
+  Serial.print  ("Max Value:    "); Serial.print(sensor.max_value); Serial.println(" xxx");
+  Serial.print  ("Min Value:    "); Serial.print(sensor.min_value); Serial.println(" xxx");
+  Serial.print  ("Resolution:   "); Serial.print(sensor.resolution); Serial.println(" xxx");
+  Serial.println("------------------------------------");
+  Serial.println("");
+  delay(500);
+}
+
+void displaySensorStatus(void)
+{
+  /* Get the system status values (mostly for debugging purposes) */
+  uint8_t system_status, self_test_results, system_error;
+  system_status = self_test_results = system_error = 0;
+  bno.getSystemStatus(&system_status, &self_test_results, &system_error);
+
+  /* Display the results in the Serial Monitor */
+  Serial.println("");
+  Serial.print("System Status: 0x");
+  Serial.println(system_status, HEX);
+  Serial.print("Self Test:     0x");
+  Serial.println(self_test_results, HEX);
+  Serial.print("System Error:  0x");
+  Serial.println(system_error, HEX);
+  Serial.println("");
+  delay(500);
+}
+
+void displayCalStatus(void)
+{
+  /* Get the four calibration values (0..3) */
+  /* Any sensor data reporting 0 should be ignored, */
+  /* 3 means 'fully calibrated" */
+  uint8_t system, gyro, accel, mag;
+  system = gyro = accel = mag = 0;
+  bno.getCalibration(&system, &gyro, &accel, &mag);
+
+  /* The data should be ignored until the system calibration is > 0 */
+  Serial.print("\t");
+  if (!system)
+  {
+    Serial.print("! ");
+  }
+
+  /* Display the individual values */
+  Serial.print("Sys:");
+  Serial.print(system, DEC);
+  Serial.print(" G:");
+  Serial.print(gyro, DEC);
+  Serial.print(" A:");
+  Serial.print(accel, DEC);
+  Serial.print(" M:");
+  Serial.print(mag, DEC);
+}
+
+void setup()
+{
+  Wire.begin (4); //Join I2C bus with adress #4
+  Wire.onRequest (requestEvent); //Register event
+
+  Serial.begin(9600); //Initialize serial to log output
+  temp.begin (); // Initialize I2C library and the MLX90614.
+  temp.setUnit(TEMP_C); //Set units to Celsius. 
+  if(!bno.begin())
+  {
+    /* There was a problem detecting the BNO055 ... check your connections */
+    Serial.print("Ooops, no BNO055 detected ... Check your wiring or I2C ADDR!");
+    while(1);
+  }
+  displaySensorDetails();
+  /* Optional: Display current status */
+  displaySensorStatus();
+  bno.setExtCrystalUse(true);
+}
+
+
+void loop()
+{
+  digitalWrite(11, HIGH);  
+  VRaw = analogRead(A0);
+  IRaw = analogRead(A1);
+  
+  //Conversion
+  VFinal = VRaw/49.44; //45 Amp board
+  IFinal = IRaw/14.9; //45 Amp board
+
+  Serial.print(VFinal);
+  Serial.println(" V");
+  Serial.print(IFinal);
+  Serial.println(" A");
+  Serial.println("");
+
+    /* Get a new sensor event */
+  sensors_event_t event;
+  bno.getEvent(&event);
+
+  /* Display the floating point data */
+  Serial.print("X: ");
+  Serial.print(event.orientation.x, 4);
+  Serial.print("\tY: ");
+  Serial.print(event.orientation.y, 4);
+  Serial.print("\tZ: ");
+  Serial.print(event.orientation.z, 4);
+
+  /* Optional: Display calibration status */
+  displayCalStatus();
+
+  /* Optional: Display sensor status (debug only) */
+  //displaySensorStatus();
+
+  /* New line for the next sample */
+  Serial.println("");
+
+  /* Wait the specified delay before requesting nex data */
+  delay(BNO055_SAMPLERATE_DELAY_MS);
+  
+  //Call therm.read() to read object and ambient temperatures from the sensor.
+  if (temp.read()) //On success, read() will return a 1, on fail 0.
+  {
+    objectTemp = float(temp.object()); //Use object() and ambient() functions to grab temperatures
+                                         //They're floats, calculated out to the unit in setUnit function.
+    ambientTemp = float(temp.ambient());
+
+    if (objectTemp < 50 && objectTemp>0)
+    {
+      Serial.print ("Object: " + String(objectTemp));
+      Serial.println ("C");
+
+      Serial.print ("Ambient: " + String (ambientTemp));
+      Serial.println ("C");      
+    }
+    else
+    {
+      Serial.print ("Critical Teperature Detected!");
+      Serial.println ("Object: " + objectTemp);
+      Serial.println ("Ambient: " + ambientTemp);
+    }
+  }
+
+
+ delay (1000); 
+}
+
+void requestEvent()
+{
+  if (0 < objectTemp && objectTemp < 50)
+    {
+      Wire.write("Object: " + objectTemp);
+      Wire.write("\nAmbient: " + ambientTemp);
+    }
+
+  else
+  {
+    Wire.write("Critical Temperature Detected!");
+    Wire.write("\nObject: " + objectTemp);
+    Wire.write("\nAmbient: " + ambientTemp);
+  }
+
+}
