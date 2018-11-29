@@ -1,0 +1,310 @@
+/* 
+   HyperLynx: sda.c
+
+   Purpose:
+   Provide motor controller proper state determined by this algorithm and sensor information
+
+   State Determination Algorithm
+
+   State       Description
+   0000-0      Fault
+   0001-1      Safe to Approach(Standby)
+   0010-2      Ready to Launch
+   0011-3      Launching(Accel 1 - Top Speed)
+   0100-4      Coasting(NOT USED)
+   0101-5      Braking(High Speed)
+   0110-6      Crawling(Accel 2 - Low Speed)
+   0111-7      Braking(Low Speed)
+
+   I/O Parameters:
+
+   INPUTS
+   v(t)-Pod Velocity(0-400 ft/s)
+   a(t)-Pod Acceleration(0-10 G)
+   B(t)-Pneumatic Brake System State(1-CLOSED/ON/VENT 0-OPEN/OFF/CHARGED)
+   d(t)-Pod Position in Tube(distance traveled)(0-4150 ft)
+   E(t)-Individual Sensor Error Flags(0-NO ERROR 1-ERROR FLAG)
+
+      - E(t) = (LV Current, LV Voltage, LV Temp., BME1, BME2, BMP, IMU's, BMS Current,
+                BMS Voltage, BMS Temp., Pneumatics, MC Current, MC Voltage, MC Temp., Comms Loss, Spare)
+   
+   OUTPUTS
+   HVC(t)-High Voltage Contactors(0-CLOSED/SHORT/ON 1-OPEN/OFF)
+   TR(t) -Throttle Control(MAX/CRAWL/OFF)
+   LG(t) -Data Logging
+   B(t)  -Pneumatic Brake System Control(1-CLOSED/ON/VENT 0-OPEN/OFF/CHARGED)
+
+   SENSORS:
+
+   Purpose:
+   Pull in sensor readings from Arduino Due
+
+   Details:
+   2 IMUs (9DoF)
+   2 PV (BME280)
+   1 IR Temp
+   1 Current and Voltage
+   2 Laser Range Sensors (1 Left, 1 Right)
+   1 PV (Pneumatics)
+   3 MC Reads
+   3 BMS Reads
+   1 Uno
+   1 Due
+
+   WhoToBlame:
+   John Brenner
+*/
+
+#include "sda.h"
+#include <stdio.h>
+#include <stdint.h>
+#include <string.h>
+#include <time.h>
+
+unsigned int LV_Current = 0, LV_Voltage = 0;
+unsigned int rLaser = 0, lLaser = 0;
+unsigned int Distance, Velocity;
+unsigned int State = 1;
+unsigned int launchCnt = 0;
+unsigned int prelaunchCnt = 0;
+unsigned int i;
+char command[11];
+char crawl[5];
+char cont[5];
+
+void delay(unsigned int mseconds)    // declared delay function utilizing time.h
+{
+  clock_t goal = mseconds + clock();
+  while(goal > clock());
+}
+
+void preplaunch()                    // declared function for preparing to launch, executes when launch code is entered
+{
+  for(i = 10; i > 0; i--){
+    printf("Launch in %d seconds\n", i);
+    delay(1000000);
+  }
+  printf("\n");
+}
+
+/*uint16_t Low_Current(uint16_t e) {
+
+  // Read in Low Voltage Current data and monitor range
+  if (LV_Current <= 5 && LV_Current >= 0) {
+    
+    printf("Low Voltage Current within operating range: %d\n", LV_Current);
+    LV_Current++;
+    
+  }else if (LV_Current > 5) {
+    
+    e = 0x800;
+    
+  }
+
+  return e;
+
+}
+
+uint16_t Low_Voltage(uint16_t e) {
+
+  // Read in Low Voltage data and monitor range
+  if (LV_Voltage <= 3 && LV_Voltage >= 0) {
+    
+    printf("Low Voltage within operating range: %d\n", LV_Current);
+    LV_Voltage++;
+    
+  }else if (LV_Voltage > 3) {
+    
+    e = 0x400;
+    
+  }
+
+  return e;
+
+  }*/
+    
+
+int main() {
+
+  //unsigned int IMUs,BME1,BME2,LV_Current,LV_Voltage,LV_Temp,BMS_Current,BMS_Voltage,BMS_Temp,MC_Current,MC_Voltage,MC_Temp,Comm,BPneum,BMP;
+  //unsigned int State0,State1,State2,State3,State5,State6,State7;  // not sure if these are needed
+  
+  uint16_t E_t = 0x0000;               // Error flag variable, each bit represents a monitored sensor
+  uint16_t e = 0x0000;
+
+  while(E_t == 0) {                    // 0000 0000 0000 0000
+
+    printf("Currently NO ERRORS\nAll systems good to go!\n");
+    printf("Sensor Flag Read Zero: 0x%04x\n\n", E_t);  // Reads us the 0x0000 error flag, assuring we are good to go
+    delay(1000000);
+
+    if(prelaunchCnt == 10) { // used for if we want to continue checking sensor values or begin the launch process
+      printf("Continue Checks: [Yes] or [No!]\n");
+      scanf("%s",cont);
+      if (strcmp(cont,"No!") != 0) {
+	printf("\nContinue Checking\n\n");
+	prelaunchCnt = 0;
+	State = 1;
+      }else if (strcmp(cont,"Yes") != 0) {
+	State = 2;
+      }
+    }
+    
+    // Here is where we will start sensor readings. If, else statements, if a sensor goes outside its boundary
+    // that we impose on it, the statement will break and E_t will be set and the if else statements below will
+    // begin to determine the error and the pod will be turned off and put into state of fault.
+    // Could we implement a function call for each sensor? Hence,
+    
+    //IMU();
+    //BME();
+    //E_t = Low_Current(e);
+    //E_t = Low_Voltage(e);
+    /* Low_Temp();
+    Batt_Current();
+    Batt_Voltage();
+    Batt_Temp();
+    Motor_Current();
+    Motor_Voltage();
+    Motor_Temp();
+    Pneu_Brake_Pressure();
+    Atmosphere_Pressure();*/
+
+    if(E_t != 0) {                       // if E_t is not equal to 0x0, then there is a fault to be checked
+
+      printf("ERROR\n");
+      State = 0;  // instead of automatically falling into a fault state, we need to implement a "fault" range within these statements before fully shutting down the pod
+
+      while(E_t != 0) {                  // while E_t there is still a sensor outside of its range hang out in here
+
+	if(E_t == 0x1) {                 // 0000 0000 0000 0001
+
+	  printf("BMP Atmospheric Pressure Outside Range\n");
+	  // if pressure continues to be outside pressure for more than "" seconds, then call FAULT
+	  // if pressure spikes past a certain range outside operating range, then call FAULT
+	  // else don't call fault so rapidly, would rather break a pod than stop it early when there was no real danger
+
+	}else if(E_t == 0x2) {           // 0000 0000 0000 0010
+
+	  printf("Pneumatic Brake Pressure Outside Range\n");
+
+	}else if(E_t == 0x4) {           // 0000 0000 0000 0100
+
+	  printf("Communication Failure\n");
+
+	}else if(E_t == 0x8) {           // 0000 0000 0000 1000
+
+	  printf("Motor Controller Temperature Outside Range\n");
+
+	}else if(E_t == 0x10) {          // 0000 0000 0001 0000
+
+	  printf("Motor Controller Voltage Outside Range\n");
+
+	}else if(E_t == 0x20) {          // 0000 0000 0010 0000
+
+	  printf("Motor Controller Current Outside Range\n");
+
+	}else if(E_t == 0x40) {          // 0000 0000 0100 0000
+
+	  printf("BMS Temperature Outside Range\n");
+
+	}else if(E_t == 0x80) {          // 0000 0000 1000 0000
+
+	  printf("BMS Voltage Outside Range\n");
+
+	}else if(E_t == 0x100) {         // 0000 0001 0000 0000
+
+	  printf("BMS Current Outside Range\n");
+
+	}else if(E_t == 0x200) {         // 0000 0010 0000 0000
+
+	  printf("LV Temperature Outside Range\n");
+
+	}else if(E_t == 0x400) {         // 0000 0100 0000 0000
+
+	  printf("LV Voltage Outside Range\n");
+
+	}else if(E_t == 0x800) {         // 0000 1000 0000 0000
+
+	  printf("LV Current Outside Range\n");
+
+	}else if(E_t == 0x1000) {        // 0001 0000 0000 0000
+
+	  printf("Front BME Fault\n");
+
+	}else if(E_t == 0x2000) {        // 0010 0000 0000 0000
+
+	  printf("Rear BME Fault\n");
+
+	}else{
+
+	  printf("Multiple Faults\n");
+	  printf("ERROR FLAGS: 0x%04x\n", E_t);
+
+	}  // End of fault determined statement
+      
+      }  // End of "while E_t != 0"
+
+    }  // End of "if E_t != 0"
+    
+    switch(State) {
+
+    case 0:  // Implement as a seperate function, not a case statement. ooorrr, keep as case, but only have it execute when completely necessary
+      printf("There is a fault!\n");
+      E_t = 0x0000;
+      break;
+
+    case 1:
+      printf("In Standby Mode, safe to approach.\n");
+      break;
+
+    case 2:
+      printf("Ready to launch!\n");
+      printf("Type Command To Launch\n");
+      scanf("%s",command);
+      if (strcmp(command,"HyperLynx") != 0) {
+	printf("Invalid Command, TRY AGAIN!\n");
+	State = 2; // Should we break out with state = 2 again or run the pre-process on the system again?
+	break;
+      }
+      preplaunch();
+      State = 3;
+      break;
+
+    case 3:  // If error is caught, need to break out of case 3 and go to case 4
+      printf("LAUNCH!!!\n");
+      // if statement needed for when we reach certain distance or speed then the pod goes to state 4(brake)
+      delay(100000);
+      State = 5;
+      break;
+
+    case 4:  // Brake while at full speed launch, necessary when checkpoint is reached or speed is met or there is a major fault
+      printf("Braking: HIGH SPEED!\n");
+      // have a statement here for when the pod reaches a speed of 0, we check sensors for roughly 10seconds and then move state 5(crawl)
+      break;
+
+    case 5:  // have a post check cnt that runs in a for loop that we can reset to make sure that everything is functional after braking
+      printf("Ready to Crawl?\n");
+      scanf("%s",crawl);
+      if (strcmp(crawl,"Yes") != 0) {
+	printf("Not Ready\n");
+	State = 5;
+	break;
+      }
+      State = 6;
+      break;
+
+    case 6:
+      printf("Crawling to the end.\n"); // Begin function to crawl at a low speed to the end of the tunnel, continue monitoring distance.
+      break;
+      
+    case 7:
+      printf("Braking: FINISHED!\n");
+      break;
+
+    } // End of switch statements
+    
+    prelaunchCnt++;
+    
+  } // End of main while loop
+  
+} // End of main loop
